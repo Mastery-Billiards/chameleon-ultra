@@ -35,6 +35,30 @@ static volatile bool m_is_lf_emulating = false;
 // Cache tag type
 static tag_specific_type_t m_tag_type = TAG_TYPE_UNDEFINED;
 
+/* ------------------------------------------------------------------
+ * Reader-read detection for LF (locker "tap" acknowledgement)
+ *
+ * Unlike HF there is no reader->tag handshake for 125kHz cards (EM410X and the
+ * other LF protocols just modulate their id whenever a field is present), so the
+ * strongest signal we can give the host is "a 125kHz reader energised the
+ * antenna while we were broadcasting our id". This counter increments each time
+ * the LPCOMP detects the field appearing (see lpcomp_event_handler). The host
+ * clears it before presenting the device, then polls; a non-zero count means an
+ * LF reader read the emulated card. Note this cannot confirm the reader
+ * *decoded/accepted* the id, and it carries no card identity. A plain volatile
+ * uint32 is enough: the writer runs in the LPCOMP IRQ, the host get/clear run in
+ * the main loop, and a single aligned 32-bit access is atomic on Cortex-M4.
+ * ------------------------------------------------------------------ */
+static volatile uint32_t m_lf_field_count = 0;
+
+uint32_t lf_tag_em_field_count(void) {
+    return m_lf_field_count;
+}
+
+void lf_tag_em_field_clear(void) {
+    m_lf_field_count = 0;
+}
+
 // The pwm to broadcast modulated card id
 const nrfx_pwm_t m_broadcast = NRFX_PWM_INSTANCE(0);
 const nrf_pwm_sequence_t *m_pwm_seq = NULL;
@@ -73,6 +97,12 @@ static void lpcomp_event_handler(nrf_lpcomp_event_t event) {
     // Only when the lf-frequency emulation is not launched, and the analog card is started
     if (m_is_lf_emulating || event != NRF_LPCOMP_EVENT_UP) {
         return;
+    }
+
+    // Reader-read detection: a 125kHz reader just energised the antenna while we
+    // are emulating. Record it so the host can detect an LF locker tap.
+    if (m_lf_field_count != 0xFFFFFFFF) {
+        m_lf_field_count++;
     }
 
     sleep_timer_stop();  // turn off dormant delay

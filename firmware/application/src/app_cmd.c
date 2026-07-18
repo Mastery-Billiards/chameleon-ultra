@@ -18,6 +18,7 @@
 #include "bsp_wdt.h"
 #include "lf_reader_generic.h"
 #include "lf_em4x05_data.h"
+#include "lf_tag_em.h"
 #include "rc522.h"
 #include "mf1_crapto1.h"
 #include "parity.h"
@@ -976,6 +977,22 @@ static data_frame_tx_t *cmd_processor_hf14a_get_select_count(uint16_t cmd, uint1
 
 static data_frame_tx_t *cmd_processor_hf14a_clear_select_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
     nfc_tag_14a_reader_select_clear();
+    return data_frame_make(cmd, STATUS_SUCCESS, 0, NULL);
+}
+
+// LF (125kHz) reader-read detection — the LF analog of the HF SELECT counter.
+// LF cards have no reader->tag handshake, so this counts field-appearance events
+// (a reader energised the antenna while we emulate). See lf_tag_em.c. No card
+// identity is available for LF, so the response is just the count.
+static data_frame_tx_t *cmd_processor_lf_get_field_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    uint8_t payload[4] = { 0 };
+    uint32_t count_be = U32HTONL(lf_tag_em_field_count());
+    memcpy(payload, &count_be, 4);
+    return data_frame_make(cmd, STATUS_SUCCESS, 4, payload);
+}
+
+static data_frame_tx_t *cmd_processor_lf_clear_field_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    lf_tag_em_field_clear();
     return data_frame_make(cmd, STATUS_SUCCESS, 0, NULL);
 }
 
@@ -3102,6 +3119,8 @@ static cmd_data_map_t m_data_cmd_map[] = {
     {    DATA_CMD_MF1_GET_DETECTION_ENABLE,     NULL,                        cmd_processor_mf1_get_detection_enable,      NULL                   },
     {    DATA_CMD_HF14A_GET_SELECT_COUNT,       NULL,                        cmd_processor_hf14a_get_select_count,        NULL                   },
     {    DATA_CMD_HF14A_CLEAR_SELECT_COUNT,     NULL,                        cmd_processor_hf14a_clear_select_count,      NULL                   },
+    {    DATA_CMD_LF_GET_FIELD_COUNT,           NULL,                        cmd_processor_lf_get_field_count,            NULL                   },
+    {    DATA_CMD_LF_CLEAR_FIELD_COUNT,         NULL,                        cmd_processor_lf_clear_field_count,          NULL                   },
     {    DATA_CMD_MF1_READ_EMU_BLOCK_DATA,      NULL,                        cmd_processor_mf1_read_emu_block_data,       NULL                   },
     {    DATA_CMD_MF1_GET_EMULATOR_CONFIG,      NULL,                        cmd_processor_mf1_get_emulator_config,       NULL                   },
     {    DATA_CMD_MF1_GET_PRNG_TYPE,            NULL,                        cmd_processor_mf1_get_prng_type,             NULL                   },

@@ -157,6 +157,13 @@ class Command(enum.IntEnum):
     HF14A_GET_SELECT_COUNT = 4042
     HF14A_CLEAR_SELECT_COUNT = 4043
 
+    # LF (125kHz) reader-read detection: counts field-appearance events against
+    # the emulated tag (a reader energised the antenna). LF has no reader->tag
+    # handshake, so this is "a reader read me", not a decode confirmation, and
+    # carries no card identity. GET -> [count:u32 BE]; CLEAR resets it.
+    LF_GET_FIELD_COUNT = 5014
+    LF_CLEAR_FIELD_COUNT = 5015
+
     # ISO14443-4 T=CL emulation
     HF14A_4_APDU_RECV = 6000
     HF14A_4_APDU_SEND = 6001
