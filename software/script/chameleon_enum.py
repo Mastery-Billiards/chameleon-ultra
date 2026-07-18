@@ -150,6 +150,13 @@ class Command(enum.IntEnum):
     MF1_GET_PRNG_TYPE = 4040
     MF1_SET_PRNG_TYPE = 4041
 
+    # Reader-read detection (locker "tap" acknowledgement): counts reader
+    # anticollision+SELECT completions against the emulated tag, so it fires
+    # even for UID-only readers that never run a Crypto1 authentication.
+    # GET -> [count:u32 BE][uidLen:u8][uid:uidLen]; CLEAR resets the counter.
+    HF14A_GET_SELECT_COUNT = 4042
+    HF14A_CLEAR_SELECT_COUNT = 4043
+
     # ISO14443-4 T=CL emulation
     HF14A_4_APDU_RECV = 6000
     HF14A_4_APDU_SEND = 6001
