@@ -37,8 +37,8 @@ App: clearReaderSelectCount() → emulate MFC1K → poll getReaderSelectCount() 
   it transmits SAK and enters `NFC_TAG_STATE_14A_ACTIVE`). Generic to any HF tag type; fires for
   UID-only readers.
 - Exposed via two poll commands (the app clears, then polls):
-  - `DATA_CMD_HF14A_GET_SELECT_COUNT (4042)` → `[count:u32 BE][uidLen:u8][uid…]`
-  - `DATA_CMD_HF14A_CLEAR_SELECT_COUNT (4043)`
+  - `DATA_CMD_HF14A_GET_SELECT_COUNT (4045)` → `[count:u32 BE][uidLen:u8][uid…]`
+  - `DATA_CMD_HF14A_CLEAR_SELECT_COUNT (4046)`
 - Design decision: **poll, not push.** The app's BLE transport has no unsolicited-frame dispatch path,
   and pushing one would risk the PROTO-2 stale-frame bug. Poll at 700 ms gives sub-second latency.
 
@@ -60,8 +60,8 @@ An adversarial review of the original spike surfaced (independently verified):
   NFCT-interrupt writer can't tear the multi-byte UID. (`#include "app_util_platform.h"` added.)
 - **`app_cmd.c`** — the two `cmd_processor_*` handlers **relocated outside the `PROJECT_CHAMELEON_ULTRA`
   guard** (Lite fix); GET handler **zero-inits** its payload and fills it from the atomic snapshot.
-- **`data_cmd.h`** — command ids `4042` / `4043`.
-- **`software/script/chameleon_enum.py`** — mirrored `4042` / `4043` for the reference CLI.
+- **`data_cmd.h`** — command ids `4045` / `4046` (renumbered from 4042/4043 when upstream claimed those for SEOS).
+- **`software/script/chameleon_enum.py`** — mirrored `4045` / `4046` for the reference CLI.
 - **`docs/FLASHING_MACOS.md`** — build & flash guide.
 
 ## 5. App changes
@@ -73,7 +73,7 @@ An adversarial review of the original spike surfaced (independently verified):
 - **`app_provider.dart`** — `unlockLocker()` emulates MFC1K, **probes for custom firmware up front**
   (fails loudly instead of silently expiring), then waits for the reader tap; keeps the FLOW-10 fix
   (COMPLETED deferred to `_onReaderRead`, not marked right after emulating).
-- **`definitions.dart`** — `hf14aGetSelectCount(4042)` / `hf14aClearSelectCount(4043)`.
+- **`definitions.dart`** — `hf14aGetSelectCount(4045)` / `hf14aClearSelectCount(4046)`.
 - **`open_locker_success_view.dart` / `locker.dart`** — waiting-for-tap UI.
 
 ## 6. Reconciling the app branch with `develop`

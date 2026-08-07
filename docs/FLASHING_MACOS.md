@@ -7,8 +7,8 @@ Macs.
 > **What's custom here (`spike/reader-select-detection`)**
 > Commands that expose a "the reader read my emulated card" signal, for both HF and LF lockers:
 > - **HF** (works even for **UID-only** readers, no Crypto1 auth):
->   `DATA_CMD_HF14A_GET_SELECT_COUNT (4042)` → `[count:u32 BE][uidLen:u8][uid…]`,
->   `DATA_CMD_HF14A_CLEAR_SELECT_COUNT (4043)`
+>   `DATA_CMD_HF14A_GET_SELECT_COUNT (4045)` → `[count:u32 BE][uidLen:u8][uid…]`,
+>   `DATA_CMD_HF14A_CLEAR_SELECT_COUNT (4046)`
 > - **LF** (125 kHz field-detect, for EM410X lockers):
 >   `DATA_CMD_LF_GET_FIELD_COUNT (5014)` → `[count:u32 BE]`,
 >   `DATA_CMD_LF_CLEAR_FIELD_COUNT (5015)`
@@ -79,7 +79,7 @@ docker compose up --pull=always build-ultra      # use build-lite for a Chameleo
 
 | File | When to use |
 |------|-------------|
-| `ultra-dfu-app.zip` | **Normal install** — application only. Use this. |
+| `ultra-dfu-app-20260807.zip` | **Normal install** — application only. Use this. |
 | `ultra-dfu-full.zip` | Recovery / first-time — only if the app slot is bricked. |
 
 ---
@@ -141,7 +141,7 @@ nrfutil device program --firmware objects/ultra-dfu-app.zip --traits nordicDfu
    **incompatible firmware** rather than silently failing.
 
 **Optional CLI sanity check** (`software/script/`, device emulating a Mifare 1K slot):
-send command **`4043`** (clear) → tap a reader → send **`4042`** (get); the returned `u32` count
+send command **`4046`** (clear) → tap a reader → send **`4045`** (get); the returned `u32` count
 should be **non-zero**.
 
 ---

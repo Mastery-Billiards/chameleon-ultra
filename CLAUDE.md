@@ -31,7 +31,7 @@ docker compose up --pull=always build-ultra     # or build-lite for the Lite boa
 
 `firmware/build.sh` is the actual build entrypoint run inside the container. It builds the
 bootloader then the application (each is a plain `make -j`), then uses `nrfutil` + `mergehex`
-to produce signed DFU zips (`ultra-dfu-app.zip`, `ultra-dfu-full.zip`) and merged hex images.
+to produce signed DFU zips (`ultra-dfu-app-20260807.zip`, `ultra-dfu-full.zip`) and merged hex images.
 `CURRENT_DEVICE_TYPE` (`ultra`|`lite`) selects the target; it maps to `PROJECT_CHAMELEON_ULTRA`
 / `PROJECT_CHAMELEON_LITE` compile guards used throughout the firmware.
 
