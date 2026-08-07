@@ -165,11 +165,16 @@
 #define DATA_CMD_MF1_GET_FIELD_OFF_DO_RESET     (4039)
 #define DATA_CMD_MF1_GET_PRNG_TYPE              (4040)  // 0=static 1=weak(LFSR) 2=hard(rand)
 #define DATA_CMD_MF1_SET_PRNG_TYPE              (4041)
+#define DATA_CMD_SEOS_READ_EMU_DATA             (4042)
+#define DATA_CMD_SEOS_WRITE_EMU_DATA            (4043)
+#define DATA_CMD_SEOS_WRITE_EMU_KEYS            (4044)
 // Reader-read detection (locker "tap" acknowledgement). Generic ISO14443-A:
 // counts reader anticollision+SELECT completions against the emulated tag, so
 // it fires even for UID-only readers that never run a Crypto1 authentication.
-#define DATA_CMD_HF14A_GET_SELECT_COUNT         (4042)  // -> [count:u32 BE][uidLen:u8][uid:uidLen]
-#define DATA_CMD_HF14A_CLEAR_SELECT_COUNT       (4043)  // reset the reader-read detection counter
+// NOTE: these were 4042/4043 before upstream claimed those ids for SEOS
+// emulation; renumbered to 4045/4046 on the merge. Hosts must match.
+#define DATA_CMD_HF14A_GET_SELECT_COUNT         (4045)  // -> [count:u32 BE][uidLen:u8][uid:uidLen]
+#define DATA_CMD_HF14A_CLEAR_SELECT_COUNT       (4046)  // reset the reader-read detection counter
 //
 // ******************************************************************
 

@@ -150,12 +150,17 @@ class Command(enum.IntEnum):
     MF1_GET_PRNG_TYPE = 4040
     MF1_SET_PRNG_TYPE = 4041
 
+    SEOS_READ_EMU_DATA = 4042
+    SEOS_WRITE_EMU_DATA = 4043
+    SEOS_WRITE_EMU_KEYS = 4044
+
     # Reader-read detection (locker "tap" acknowledgement): counts reader
     # anticollision+SELECT completions against the emulated tag, so it fires
     # even for UID-only readers that never run a Crypto1 authentication.
     # GET -> [count:u32 BE][uidLen:u8][uid:uidLen]; CLEAR resets the counter.
-    HF14A_GET_SELECT_COUNT = 4042
-    HF14A_CLEAR_SELECT_COUNT = 4043
+    # NOTE: renumbered from 4042/4043 when upstream claimed those for SEOS.
+    HF14A_GET_SELECT_COUNT = 4045
+    HF14A_CLEAR_SELECT_COUNT = 4046
 
     # LF (125kHz) reader-read detection: counts field-appearance events against
     # the emulated tag (a reader energised the antenna). LF has no reader->tag
@@ -374,6 +379,7 @@ class TagSpecificType(enum.IntEnum):
 
     # ISO14443-4 T=CL emulation
     HF14A_4 = 3000
+    SEOS = 3001
 
     @staticmethod
     def list(exclude_meta=True):
@@ -452,6 +458,8 @@ class TagSpecificType(enum.IntEnum):
             return "NTAG 210"
         elif self == TagSpecificType.NTAG_212:
             return "NTAG 212"
+        elif self == TagSpecificType.SEOS:
+            return "SEOS"
         elif self < TagSpecificType.OLD_TAG_TYPES_END:
             return "Old tag type, must be migrated! Upgrade fw!"
         return "Invalid"
