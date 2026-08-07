@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 This project uses the changelog in accordance with [keepchangelog](http://keepachangelog.com/). Please use this to write notable changes, which is not the same as git commit log...
 
 ## [unreleased][unreleased]
+ - Added reader-read detection so a host can confirm an external reader actually read the emulated tag: HF counts ISO14443-A anticollision+SELECT completions (`HF14A_GET_SELECT_COUNT` 4045 / `HF14A_CLEAR_SELECT_COUNT` 4046, returning the count plus the last selected UID) and LF counts 125kHz field-appearance events (`LF_GET_FIELD_COUNT` 5014 / `LF_CLEAR_FIELD_COUNT` 5015). Works for UID-only readers that never run a Crypto1 authentication, unlike the mfkey32 detection log.
 
 ## [v2.2.0][2026-07-04]
  - Added Jablotron LF protocol support: read, emulate and T55xx clone (@midlan)

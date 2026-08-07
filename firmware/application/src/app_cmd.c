@@ -18,12 +18,15 @@
 #include "bsp_wdt.h"
 #include "lf_reader_generic.h"
 #include "lf_em4x05_data.h"
-#include "lf_tag_em.h"
 #include "rc522.h"
 #include "mf1_crapto1.h"
 #include "parity.h"
 #endif
 #include "nfc_14a.h"
+// LF tag emulation exists on both Ultra and Lite, and the LF field-detect
+// handlers below are unguarded — so this include must stay outside the
+// PROJECT_CHAMELEON_ULTRA block rather than rely on a transitive include.
+#include "lf_tag_em.h"
 /* Forward declarations for functions added to nfc_14a.c/h in this PR.
  * These are declared here to avoid build failure if nfc_14a.h is not yet
  * updated on the build system. */
@@ -986,7 +989,12 @@ static data_frame_tx_t *cmd_processor_hf14a_clear_select_count(uint16_t cmd, uin
 // identity is available for LF, so the response is just the count.
 static data_frame_tx_t *cmd_processor_lf_get_field_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
     uint8_t payload[4] = { 0 };
-    uint32_t count_be = U32HTONL(lf_tag_em_field_count());
+    // Sample the counter ONCE into a local: U32HTONL expands its argument four
+    // times, so passing the accessor directly would read the volatile counter
+    // four times and the LPCOMP interrupt could increment between them, sending
+    // bytes assembled from different values.
+    uint32_t count = lf_tag_em_field_count();
+    uint32_t count_be = U32HTONL(count);
     memcpy(payload, &count_be, 4);
     return data_frame_make(cmd, STATUS_SUCCESS, 4, payload);
 }

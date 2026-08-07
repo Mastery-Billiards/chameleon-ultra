@@ -212,7 +212,7 @@
 // Reader-read detection for LF (locker "tap" acknowledgement): counts 125kHz
 // field-appearance events against the emulated tag. LF has no reader->tag
 // handshake, so this means "a reader energised me", not a decode confirmation,
-// and carries no card identity (unlike the HF SELECT counter 4042/4043).
+// and carries no card identity (unlike the HF SELECT counter 4045/4046).
 #define DATA_CMD_LF_GET_FIELD_COUNT             (5014)  // -> [count:u32 BE]
 #define DATA_CMD_LF_CLEAR_FIELD_COUNT           (5015)  // reset the LF field-detection counter
 
