@@ -16,6 +16,7 @@ NRF_LOG_MODULE_REGISTER();
 #include "rfid_main.h"
 #include "syssleep.h"
 #include "tag_emulation.h"
+#include "app_util_platform.h"
 
 
 #if NFC_TAG_14A_RX_PARITY_AUTO_DEL_ENABLE
@@ -94,6 +95,76 @@ static uint8_t m_nfc_tx_buffer[MAX_NFC_TX_BUFFER_SIZE] = { 0x00 };
 static uint8_t m_uid_incomplete_sak[] = { 0x04, 0xda, 0x17 };
 // Reset nfc peripheral after field lost?
 static bool reset_if_field_lost = false; // default is 'false', Unless there is a genuine need for a reset.
+
+/* ------------------------------------------------------------------
+ * Reader-read detection (locker "tap" acknowledgement)
+ *
+ * Increments once each time an external reader completes the ISO14443-A
+ * anticollision + SELECT sequence against the emulated tag (we answer SAK and
+ * move to ACTIVE). This fires for *any* HF reader, including UID-only access
+ * controllers that never run a Crypto1 authentication -- so unlike the mfkey32
+ * detection log it works for lockers that decide purely on the UID.
+ *
+ * The host clears the counter (CLEAR_SELECT_COUNT) right before presenting the
+ * device to a reader, then polls GET_SELECT_COUNT; a non-zero count means a
+ * reader read the emulated card. The last selected UID is kept so the host can
+ * verify it was *its* card and ignore unrelated readers in the field.
+ * ------------------------------------------------------------------ */
+static volatile uint32_t m_reader_select_count = 0;
+static uint8_t m_reader_select_last_uid[10] = { 0x00 };
+static uint8_t m_reader_select_last_uid_len = 0;
+
+void nfc_tag_14a_reader_select_inc(const uint8_t *uid, uint8_t uid_len) {
+    if (m_reader_select_count != 0xFFFFFFFF) {
+        m_reader_select_count++;
+    }
+    if (uid != NULL && uid_len > 0 && uid_len <= sizeof(m_reader_select_last_uid)) {
+        memcpy(m_reader_select_last_uid, uid, uid_len);
+        m_reader_select_last_uid_len = uid_len;
+    }
+}
+
+uint32_t nfc_tag_14a_reader_select_count(void) {
+    return m_reader_select_count;
+}
+
+uint8_t nfc_tag_14a_reader_select_last_uid(uint8_t *out) {
+    uint8_t len;
+    CRITICAL_REGION_ENTER();
+    len = m_reader_select_last_uid_len;
+    if (len > 0 && out != NULL) {
+        memcpy(out, m_reader_select_last_uid, len);
+    }
+    CRITICAL_REGION_EXIT();
+    return len;
+}
+
+// Atomic snapshot of the reader-select counter together with the last selected
+// UID, so the host sees a coherent (count, uid) pair in a single command. The
+// writer (nfc_tag_14a_reader_select_inc) runs in the NFCT interrupt; masking it
+// with a short critical region here prevents a torn multi-byte UID or a
+// length-vs-bytes mismatch.
+void nfc_tag_14a_reader_select_get(uint32_t *count, uint8_t *uid, uint8_t *uid_len) {
+    CRITICAL_REGION_ENTER();
+    if (count != NULL) {
+        *count = m_reader_select_count;
+    }
+    uint8_t len = m_reader_select_last_uid_len;
+    if (uid != NULL && len > 0) {
+        memcpy(uid, m_reader_select_last_uid, len);
+    }
+    if (uid_len != NULL) {
+        *uid_len = len;
+    }
+    CRITICAL_REGION_EXIT();
+}
+
+void nfc_tag_14a_reader_select_clear(void) {
+    CRITICAL_REGION_ENTER();
+    m_reader_select_count = 0;
+    m_reader_select_last_uid_len = 0;
+    CRITICAL_REGION_EXIT();
+}
 
 
 /**
@@ -528,6 +599,9 @@ void nfc_tag_14a_data_process(uint8_t *p_data) {
                         m_tag_state_14a = NFC_TAG_STATE_14A_ACTIVE;
                         if (!m_sniff_passive) {
                             nfc_tag_14a_tx_bytes(auto_coll_res->sak, 1, true);
+                            // A reader completed anticollision + SELECT and received our SAK:
+                            // record the read so the host can detect a UID-only locker tap.
+                            nfc_tag_14a_reader_select_inc(auto_coll_res->uid, (uint8_t)(*auto_coll_res->size));
                         }
                     } else {
                         // It is necessary to continue the level, so we need to respond to a data that marks the incomplete UID in SAK

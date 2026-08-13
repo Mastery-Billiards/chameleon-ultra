@@ -141,4 +141,15 @@ bool is_valid_uid_size(uint8_t uid_length);
 void nfc_tag_14a_set_reset_enable(bool enable);
 bool nfc_tag_14a_is_reset_enable();
 
+// Reader-read detection (locker "tap" acknowledgement).
+// Counts each reader anticollision+SELECT completion against the emulated tag
+// (we answered SAK and entered ACTIVE). Works for UID-only readers that never
+// authenticate, unlike the mfkey32 detection log. The last selected UID is kept
+// so the host can confirm it was *its* card.
+void nfc_tag_14a_reader_select_inc(const uint8_t *uid, uint8_t uid_len);
+uint32_t nfc_tag_14a_reader_select_count(void);
+uint8_t nfc_tag_14a_reader_select_last_uid(uint8_t *out);  // returns uid length copied into out
+void nfc_tag_14a_reader_select_get(uint32_t *count, uint8_t *uid, uint8_t *uid_len);  // atomic snapshot of count + last UID
+void nfc_tag_14a_reader_select_clear(void);
+
 #endif

@@ -23,6 +23,10 @@
 #include "parity.h"
 #endif
 #include "nfc_14a.h"
+// LF tag emulation exists on both Ultra and Lite, and the LF field-detect
+// handlers below are unguarded — so this include must stay outside the
+// PROJECT_CHAMELEON_ULTRA block rather than rely on a transitive include.
+#include "lf_tag_em.h"
 /* Forward declarations for functions added to nfc_14a.c/h in this PR.
  * These are declared here to avoid build failure if nfc_14a.h is not yet
  * updated on the build system. */
@@ -950,6 +954,55 @@ static data_frame_tx_t *cmd_processor_generic_read(uint16_t cmd, uint16_t status
 }
 
 #endif
+
+
+// Reader-read detection (locker "tap" acknowledgement). Generic ISO14443-A,
+// available on BOTH Ultra and Lite — counts reader anticollision+SELECT
+// completions against the emulated tag, so it fires even for UID-only readers
+// that never run a Crypto1 authentication. See nfc_14a.c for the counter.
+// NOTE: kept OUTSIDE the PROJECT_CHAMELEON_ULTRA guard on purpose — the
+// dispatch-table rows for these commands are unconditional, so the handlers
+// must compile for the Lite target too.
+static data_frame_tx_t *cmd_processor_hf14a_get_select_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    // Response layout: [count:u32 BE][last_uid_len:u8][last_uid: last_uid_len bytes].
+    // Zero-initialised so no uninitialised stack bytes are ever transmitted, and
+    // filled from a single atomic snapshot so count and UID stay coherent w.r.t.
+    // the NFCT interrupt that increments the counter.
+    uint8_t payload[4 + 1 + 10] = { 0 };
+    uint32_t count = 0;
+    uint8_t uid_len = 0;
+    nfc_tag_14a_reader_select_get(&count, &payload[5], &uid_len);
+    uint32_t count_be = U32HTONL(count);
+    memcpy(&payload[0], &count_be, 4);
+    payload[4] = uid_len;
+    return data_frame_make(cmd, STATUS_SUCCESS, 5 + uid_len, payload);
+}
+
+static data_frame_tx_t *cmd_processor_hf14a_clear_select_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    nfc_tag_14a_reader_select_clear();
+    return data_frame_make(cmd, STATUS_SUCCESS, 0, NULL);
+}
+
+// LF (125kHz) reader-read detection — the LF analog of the HF SELECT counter.
+// LF cards have no reader->tag handshake, so this counts field-appearance events
+// (a reader energised the antenna while we emulate). See lf_tag_em.c. No card
+// identity is available for LF, so the response is just the count.
+static data_frame_tx_t *cmd_processor_lf_get_field_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    uint8_t payload[4] = { 0 };
+    // Sample the counter ONCE into a local: U32HTONL expands its argument four
+    // times, so passing the accessor directly would read the volatile counter
+    // four times and the LPCOMP interrupt could increment between them, sending
+    // bytes assembled from different values.
+    uint32_t count = lf_tag_em_field_count();
+    uint32_t count_be = U32HTONL(count);
+    memcpy(payload, &count_be, 4);
+    return data_frame_make(cmd, STATUS_SUCCESS, 4, payload);
+}
+
+static data_frame_tx_t *cmd_processor_lf_clear_field_count(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    lf_tag_em_field_clear();
+    return data_frame_make(cmd, STATUS_SUCCESS, 0, NULL);
+}
 
 
 static data_frame_tx_t *cmd_processor_set_active_slot(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
@@ -3157,6 +3210,10 @@ static cmd_data_map_t m_data_cmd_map[] = {
     {    DATA_CMD_MF1_GET_DETECTION_COUNT,      NULL,                        cmd_processor_mf1_get_detection_count,       NULL                   },
     {    DATA_CMD_MF1_GET_DETECTION_LOG,        NULL,                        cmd_processor_mf1_get_detection_log,         NULL                   },
     {    DATA_CMD_MF1_GET_DETECTION_ENABLE,     NULL,                        cmd_processor_mf1_get_detection_enable,      NULL                   },
+    {    DATA_CMD_HF14A_GET_SELECT_COUNT,       NULL,                        cmd_processor_hf14a_get_select_count,        NULL                   },
+    {    DATA_CMD_HF14A_CLEAR_SELECT_COUNT,     NULL,                        cmd_processor_hf14a_clear_select_count,      NULL                   },
+    {    DATA_CMD_LF_GET_FIELD_COUNT,           NULL,                        cmd_processor_lf_get_field_count,            NULL                   },
+    {    DATA_CMD_LF_CLEAR_FIELD_COUNT,         NULL,                        cmd_processor_lf_clear_field_count,          NULL                   },
     {    DATA_CMD_MF1_READ_EMU_BLOCK_DATA,      NULL,                        cmd_processor_mf1_read_emu_block_data,       NULL                   },
     {    DATA_CMD_MF1_GET_EMULATOR_CONFIG,      NULL,                        cmd_processor_mf1_get_emulator_config,       NULL                   },
     {    DATA_CMD_MF1_GET_PRNG_TYPE,            NULL,                        cmd_processor_mf1_get_prng_type,             NULL                   },

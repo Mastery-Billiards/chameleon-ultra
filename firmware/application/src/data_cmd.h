@@ -168,6 +168,13 @@
 #define DATA_CMD_SEOS_READ_EMU_DATA             (4042)
 #define DATA_CMD_SEOS_WRITE_EMU_DATA            (4043)
 #define DATA_CMD_SEOS_WRITE_EMU_KEYS            (4044)
+// Reader-read detection (locker "tap" acknowledgement). Generic ISO14443-A:
+// counts reader anticollision+SELECT completions against the emulated tag, so
+// it fires even for UID-only readers that never run a Crypto1 authentication.
+// NOTE: these were 4042/4043 before upstream claimed those ids for SEOS
+// emulation; renumbered to 4045/4046 on the merge. Hosts must match.
+#define DATA_CMD_HF14A_GET_SELECT_COUNT         (4045)  // -> [count:u32 BE][uidLen:u8][uid:uidLen]
+#define DATA_CMD_HF14A_CLEAR_SELECT_COUNT       (4046)  // reset the reader-read detection counter
 //
 // ******************************************************************
 
@@ -202,6 +209,12 @@
 #define DATA_CMD_JABLOTRON_GET_EMU_ID           (5011)
 #define DATA_CMD_IDTECK_SET_EMU_ID              (5012)
 #define DATA_CMD_IDTECK_GET_EMU_ID              (5013)
+// Reader-read detection for LF (locker "tap" acknowledgement): counts 125kHz
+// field-appearance events against the emulated tag. LF has no reader->tag
+// handshake, so this means "a reader energised me", not a decode confirmation,
+// and carries no card identity (unlike the HF SELECT counter 4045/4046).
+#define DATA_CMD_LF_GET_FIELD_COUNT             (5014)  // -> [count:u32 BE]
+#define DATA_CMD_LF_CLEAR_FIELD_COUNT           (5015)  // reset the LF field-detection counter
 
 #define DATA_CMD_EM4X05_SCAN                    (3030)
 #define DATA_CMD_EM4X05_READSNIFF               (3032)

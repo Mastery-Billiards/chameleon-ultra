@@ -31,3 +31,7 @@ bool lf_tag_jablotron_data_factory(uint8_t slot, tag_specific_type_t tag_type);
 int lf_tag_idteck_data_savecb(tag_specific_type_t type, tag_data_buffer_t *buffer);
 bool lf_tag_idteck_data_factory(uint8_t slot, tag_specific_type_t tag_type);
 bool is_lf_field_exists(void);
+// Reader-read detection for LF: count of 125kHz field-appearance events against
+// the emulated tag (a reader energised us). No card identity is available for LF.
+uint32_t lf_tag_em_field_count(void);
+void lf_tag_em_field_clear(void);
