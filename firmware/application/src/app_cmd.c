@@ -1004,6 +1004,61 @@ static data_frame_tx_t *cmd_processor_lf_clear_field_count(uint16_t cmd, uint16_
     return data_frame_make(cmd, STATUS_SUCCESS, 0, NULL);
 }
 
+// The field count above only says a reader was present. This reports how well it
+// was coupled, which is what actually decides whether the reader could decode us
+// — see lf_tag_em.h. Everything is reported raw so the host owns the policy;
+// the firmware's only judgement is the strong/weak split, and even that
+// threshold is host-settable via DATA_CMD_LF_SET_STRONG_MV.
+static data_frame_tx_t *cmd_processor_lf_get_field_info(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    lf_tag_em_field_info_t info;
+    // One coherent snapshot, taken under a critical region inside the accessor.
+    // Every conversion below then reads this local copy, never the live volatile
+    // counters — the U16HTONS/U32HTONL macros expand their argument repeatedly,
+    // and re-reading a counter the sampling interrupt can move would assemble a
+    // response out of several different moments.
+    lf_tag_em_field_get(&info);
+
+    uint8_t payload[31] = { 0 };
+    uint32_t u32;
+    uint16_t u16;
+
+    u32 = U32HTONL(info.field_count);
+    memcpy(&payload[0], &u32, 4);
+    u32 = U32HTONL(info.frames);
+    memcpy(&payload[4], &u32, 4);
+    u32 = U32HTONL(info.session_ms_max);
+    memcpy(&payload[8], &u32, 4);
+    u32 = U32HTONL(info.strong_ms_max);
+    memcpy(&payload[12], &u32, 4);
+    u16 = U16HTONS(info.rssi_last_mv);
+    memcpy(&payload[16], &u16, 2);
+    u16 = U16HTONS(info.rssi_peak_mv);
+    memcpy(&payload[18], &u16, 2);
+    u16 = U16HTONS(info.samples);
+    memcpy(&payload[20], &u16, 2);
+    u16 = U16HTONS(info.strong_samples);
+    memcpy(&payload[22], &u16, 2);
+    u16 = U16HTONS(info.strong_run_max);
+    memcpy(&payload[24], &u16, 2);
+    u16 = U16HTONS(info.strong_mv);
+    memcpy(&payload[26], &u16, 2);
+    u16 = U16HTONS(info.missed_samples);
+    memcpy(&payload[28], &u16, 2);
+    payload[30] = (info.emulating ? 0x01 : 0x00) |
+                  (info.adc_ok ? 0x02 : 0x00) |
+                  (info.clipped ? 0x04 : 0x00);
+
+    return data_frame_make(cmd, STATUS_SUCCESS, sizeof(payload), payload);
+}
+
+static data_frame_tx_t *cmd_processor_lf_set_strong_mv(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
+    if (length != 2) {
+        return data_frame_make(cmd, STATUS_PAR_ERR, 0, NULL);
+    }
+    lf_tag_em_field_set_strong_mv((uint16_t)((data[0] << 8) | data[1]));
+    return data_frame_make(cmd, STATUS_SUCCESS, 0, NULL);
+}
+
 
 static data_frame_tx_t *cmd_processor_set_active_slot(uint16_t cmd, uint16_t status, uint16_t length, uint8_t *data) {
     if (length != 1 || data[0] >= TAG_MAX_SLOT_NUM) {
@@ -3214,6 +3269,8 @@ static cmd_data_map_t m_data_cmd_map[] = {
     {    DATA_CMD_HF14A_CLEAR_SELECT_COUNT,     NULL,                        cmd_processor_hf14a_clear_select_count,      NULL                   },
     {    DATA_CMD_LF_GET_FIELD_COUNT,           NULL,                        cmd_processor_lf_get_field_count,            NULL                   },
     {    DATA_CMD_LF_CLEAR_FIELD_COUNT,         NULL,                        cmd_processor_lf_clear_field_count,          NULL                   },
+    {    DATA_CMD_LF_GET_FIELD_INFO,            NULL,                        cmd_processor_lf_get_field_info,             NULL                   },
+    {    DATA_CMD_LF_SET_STRONG_MV,             NULL,                        cmd_processor_lf_set_strong_mv,              NULL                   },
     {    DATA_CMD_MF1_READ_EMU_BLOCK_DATA,      NULL,                        cmd_processor_mf1_read_emu_block_data,       NULL                   },
     {    DATA_CMD_MF1_GET_EMULATOR_CONFIG,      NULL,                        cmd_processor_mf1_get_emulator_config,       NULL                   },
     {    DATA_CMD_MF1_GET_PRNG_TYPE,            NULL,                        cmd_processor_mf1_get_prng_type,             NULL                   },

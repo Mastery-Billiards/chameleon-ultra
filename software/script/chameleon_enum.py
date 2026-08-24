@@ -169,6 +169,20 @@ class Command(enum.IntEnum):
     LF_GET_FIELD_COUNT = 5014
     LF_CLEAR_FIELD_COUNT = 5015
 
+    # The count above only says a reader was present, which is too permissive to
+    # gate a lock on: a reader too weakly coupled to demodulate the emulated card
+    # trips it exactly as a well-coupled one does. GET_FIELD_INFO adds the 125kHz
+    # envelope strength, which is what actually decides whether the reader can
+    # decode us.
+    # -> [count:u32][frames:u32][session_ms_max:u32][strong_ms_max:u32]
+    #    [rssi_last_mv:u16][rssi_peak_mv:u16][samples:u16][strong_samples:u16]
+    #    [strong_run_max:u16][strong_mv:u16][missed_samples:u16][flags:u8],
+    #    big-endian. flags bit0 = emulating now, bit1 = envelope ADC claimed,
+    #    bit2 = a sample hit ADC full scale.
+    LF_GET_FIELD_INFO = 5016
+    # <- [mv:u16 BE] — retune the strong/weak split without reflashing.
+    LF_SET_STRONG_MV = 5017
+
     # ISO14443-4 T=CL emulation
     HF14A_4_APDU_RECV = 6000
     HF14A_4_APDU_SEND = 6001

@@ -34,6 +34,7 @@ uint32_t g_button2;
 uint32_t g_lf_mod;
 uint32_t g_lf_rssi_pin;
 nrf_lpcomp_input_t g_lf_rssi;
+nrf_saadc_input_t g_lf_rssi_adc;
 uint32_t g_bat_sense_pin;
 nrf_saadc_input_t g_bat_sense;
 
@@ -124,6 +125,7 @@ void hw_connect_init(void) {
         LF_MOD          = (NRF_GPIO_PIN_MAP(1, 13));
         LF_RSSI_PIN     = (NRF_GPIO_PIN_MAP(0, 2));
         LF_RSSI         = NRF_LPCOMP_INPUT_0;
+        LF_RSSI_ADC     = NRF_SAADC_INPUT_AIN0;  // P0.02
 
         BUTTON_1        = (NRF_GPIO_PIN_MAP(1, 2));
         BUTTON_2        = (NRF_GPIO_PIN_MAP(0, 26));
@@ -165,6 +167,7 @@ void hw_connect_init(void) {
         LF_MOD          = (NRF_GPIO_PIN_MAP(1, 4));
         LF_RSSI_PIN     = (NRF_GPIO_PIN_MAP(0, 2));
         LF_RSSI         = NRF_LPCOMP_INPUT_0;
+        LF_RSSI_ADC     = NRF_SAADC_INPUT_AIN0;  // P0.02
 
         BUTTON_1        = (NRF_GPIO_PIN_MAP(1, 2));
         BUTTON_2        = (NRF_GPIO_PIN_MAP(1, 6));
