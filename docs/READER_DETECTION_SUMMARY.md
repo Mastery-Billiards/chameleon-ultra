@@ -173,3 +173,145 @@ appeared); fires for **any** nearby 125 kHz reader; and the counter increments o
 **More robust future option:** have the backend return the key's card **type/frequency** in the unlock
 payload so the app branches on that instead of a UID-length heuristic (the server already stores a
 `tag` type string at enrollment; it just isn't echoed back on unlock).
+
+---
+
+## 11. LF coupling strength — why the field count was not enough
+
+Section 10 listed "fires for **any** nearby 125 kHz reader" as a caveat. In the field it turned out
+to be the whole problem, and it produced the worst failure this feature can have: **the app reported
+a locker as opened while the door stayed shut.**
+
+Two reproducible cases:
+
+| Tap | What the device did | What the app said | What the locker did |
+|-----|--------------------|-------------------|---------------------|
+| Wrong position on the locker | White field LED flashed briefly, once | Opened | Stayed locked |
+| Wrong face (the side without the A/B buttons) | White field LED lit for 1–2 s, once | Opened | Stayed locked |
+
+### Root cause
+
+`m_lf_field_count` is incremented from `lpcomp_event_handler`, which fires on an LPCOMP UP event.
+LPCOMP is configured with `NRF_LPCOMP_REF_SUPPLY_1_16` — about **VDD/16, ~200 mV**. That is a
+deliberately low bar, because it has to wake the device from a *weak* field. It is the wrong bar for
+"the reader can read me": a reader whose carrier merely reaches the antenna trips it exactly as
+readily as one close enough to demodulate the load modulation.
+
+Coupling is reciprocal. The envelope amplitude the reader's carrier induces on our coil is the same
+quantity that governs how strongly our load modulation appears back at the reader. A tap that
+registers ~200 mV is, by construction, a tap the reader cannot decode — which is precisely why the
+wrong-side case keeps dropping out and re-detecting: the envelope is hovering on top of the LPCOMP
+reference.
+
+### Why duration could not fix it
+
+One emulation burst is `nrfx_pwm_simple_playback(..., 10, ...)` — ten repeats of a 64-entry sequence
+at `counter_top = 64` on a 125 kHz base clock. That is **ten EM4100 frames, 32.768 ms each, ≈328 ms
+per burst**. The 1–2 second wrong-side taps therefore pushed **30–60 complete frames** at the reader,
+where a decode needs two or three consecutive clean ones. Those taps did not fail for want of frames
+or time. They failed for want of signal, so no duration or frame-count rule can separate them.
+
+### The fix: measure the envelope
+
+`LF_RSSI` is `P0.02`, which is **`AIN0`** — the same pin LPCOMP compares is readable by the SAADC, and
+it carries a peak-detected envelope (hence the existing "~2 ms time constant" drain comment). So the
+firmware now *measures* what it used to merely threshold.
+
+Sampling happens in `pwm_handler` immediately after `ANT_NO_MOD()` and the 2 ms settle — the one
+moment per burst when `LF_RSSI` carries the reader's carrier and nothing of ours. Measuring there
+costs no airtime and cannot disturb the id stream. It yields one sample per ~328 ms; that is coarse,
+but sampling more often would mean shortening the burst, and a reader wanting consecutive clean
+frames would start missing them.
+
+**New commands** (`data_cmd.h`, `app_cmd.c`, mirrored in `chameleon_enum.py`):
+
+- `DATA_CMD_LF_GET_FIELD_INFO (5016)` → 31 bytes, big-endian:
+  `[count:u32][frames:u32][session_ms_max:u32][strong_ms_max:u32][rssi_last_mv:u16]`
+  `[rssi_peak_mv:u16][samples:u16][strong_samples:u16][strong_run_max:u16][strong_mv:u16]`
+  `[missed_samples:u16][flags:u8]`.
+  `flags` bit 0 = emulating now, bit 1 = the envelope ADC channel was claimed,
+  bit 2 = a sample hit ADC full scale.
+- `DATA_CMD_LF_SET_STRONG_MV (5017)` ← `[mv:u16 BE]`.
+
+Three details that are easy to get wrong and were:
+
+- **A skipped conversion is not a weak sample.** `lf_rssi_sample_mv()` returns a
+  `LF_RSSI_NO_READING` sentinel when the ADC is unavailable, and `lf_rssi_record()` leaves the run
+  untouched rather than scoring 0mV. Scoring it weak would let a passing ADC conflict break the run
+  of a perfectly good tap. Skips are counted in `missed_samples` so the condition stays visible.
+- **`strong_ms_max` is measured in milliseconds, not samples.** A burst is ten frames, which is
+  ~328ms for EM410X but ~655ms for Electra's double-length frame, so a sample count would quietly
+  mean different things on different cards.
+- **LPCOMP is disabled around the conversion.** `is_lf_field_exists()` leaves the comparator enabled
+  on the same analog input, which loads the SAADC acquisition; the field check re-enables it, and no
+  UP event is lost because they are ignored while emulating.
+
+`5014`/`5015` still work; `5015` now clears the envelope statistics too.
+
+The **threshold lives on the host** deliberately. Only the strong/weak split is judged on-device, and
+even that is set over 5017, so a site whose readers run hot or cold is corrected without reflashing.
+
+**Implementation notes.** SAADC channel 0 belongs to the battery monitor (`ble_main.c`), so LF sensing
+claims channel 1 in `lf_sense_enable()` and releases it in `lf_sense_disable()`; a failed claim leaves
+measurement off rather than asserting. LPCOMP, PWM and SAADC all run at `APP_IRQ_PRIORITY_LOW`, so
+none preempts another and a blocking conversion inside a handler is safe. The multi-word snapshot is
+read under `CRITICAL_REGION`, matching `nfc_tag_14a_reader_select_get`, and the command handler copies
+it into a local before any `U16HTONS`/`U32HTONL` — those macros expand their argument repeatedly, the
+same trap fixed in commit `914bfd9`.
+
+### What the app requires now
+
+A tap is accepted only when **both** hold:
+
+- `adc_ok` — the device could measure at all. Without this a run of unmeasured samples would look
+  identical to a reader that is never strong enough, i.e. a permanent silent refusal. The app checks
+  it once at arm time and refuses loudly there instead.
+- `strong_ms_max >= 300` — an unbroken stretch of strong coupling, which at one sample per ~328ms
+  burst means two consecutive strong readings. A stretch rather than a total, because a device swept
+  past a reader can collect scattered strong samples without ever being presented as a card.
+- `session_ms_max >= 400` — the field held unbroken. Belt and braces: it refuses the wrong-position
+  tap on its own, with no calibration involved.
+
+The wrong-face tap clears the duration bar and is refused solely by the envelope threshold, so **that
+number has to be right**.
+
+### Calibrating the threshold (required, ~5 minutes, once per site)
+
+The app ships a calibration tool: **Tài khoản → Đo tín hiệu đọc thẻ**.
+
+1. Connect the device, press **BẮT ĐẦU PHÁT THẺ**.
+2. Tap the locker three ways, holding ~2 s each, pressing **LƯU** after each:
+   correct position (locker opens), wrong position, wrong face.
+3. The screen shows the peak millivolts per scenario and proposes a threshold halfway between the
+   strongest failing tap and the successful one. Press **LƯU NGƯỠNG**.
+
+If a failing tap measures **as strong as** the successful one, the screen says so plainly instead of
+proposing a number. That would mean envelope strength cannot separate these taps on this hardware,
+and the measurements should be reported rather than worked around.
+
+Until calibration is done the app uses a 600 mV default — roughly 3× the LPCOMP reference, and a
+starting point, not a measurement.
+
+### The escape hatch (do not remove it)
+
+Everything above can be wrong in the quiet direction. A threshold calibrated against an unusually
+close tap, a weaker reader elsewhere in the fleet, or a staff member who withdraws the instant the
+bolt clicks all produce the mirror-image bug: a door that visibly opened, recorded as FAILED. Nobody
+re-reads a FAILED record, so that mistake is *harder* to notice than the one being fixed.
+
+So the tap screen carries a **TỦ ĐÃ MỞ** button behind a confirmation dialog, and
+`expireReaderTapWindow()` takes one final reading before posting `/fail` — the device's counters are
+cumulative, so a BLE stall that starves the poll loop must not discard evidence already on the
+device.
+
+The button is also the only honest route for an access resumed in `UNLOCKING`: locker-service will
+not re-issue `/execute` from that state, so the key cannot be re-armed and there is nothing left to
+measure. (That path previously set `waitingForReaderTap` without ever starting detection, so it
+could only ever time out to FAILED.)
+
+### Direction of failure
+
+The two mistakes are not symmetric. A false success leaves a customer at a locked door with the
+backend recording a completed unlock. A false failure means staff see an error next to a door that
+did open, and retry. The thresholds therefore err strict, and the tap screen coaches
+("Tín hiệu yếu — chạm mặt có nút A/B…") instead of silently waiting.
