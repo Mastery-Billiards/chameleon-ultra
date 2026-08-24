@@ -72,11 +72,23 @@ static tag_specific_type_t m_tag_type = TAG_TYPE_UNDEFINED;
 // Frames per emulation burst. Shared with the playback calls below so the frame
 // tally and the airtime can never drift apart.
 #define LF_EMU_BURST_FRAMES     10
-// Default "strong enough that the reader can demodulate us" level. A starting
-// point, not a law of nature: the host can retune it per deployment over
-// DATA_CMD_LF_SET_STRONG_MV without reflashing, which is the whole reason the
-// threshold lives in a variable.
-#define LF_STRONG_MV_DEFAULT    600
+// Default "strong enough that the reader can demodulate us" level, in
+// millivolts. Measured on a real locker rather than reasoned about: broadcasting
+// that locker's own key, a correct tap peaked at 3599mV and opened the door,
+// while a wrong-position tap reached 1784mV and a wrong-side tap 677mV with the
+// door staying shut. A first guess of 600mV — "comfortably above the ~200mV
+// LPCOMP trip" — would have scored that 1784mV failing tap as strong, and 2000mV
+// left only ~200mV above it. So this is the measured midpoint of those readings
+// rather than another estimate: ~900mV clear of the worst failure and ~770mV
+// below the weakest good reading observed (~3460mV).
+//
+// The wrong-side tap raised 21 separate field detections and pushed 380 frames
+// at the reader without ever being decoded, which is the whole argument for
+// gating on strength rather than on presence or duration.
+//
+// Still only one locker's readers, so the host retunes it per deployment over
+// DATA_CMD_LF_SET_STRONG_MV, which is the whole reason it lives in a variable.
+#define LF_STRONG_MV_DEFAULT    2690
 
 // Returned when no reading could be taken at all. Distinct from 0 mV, which is
 // a real measurement meaning "no field": a skipped conversion must not be

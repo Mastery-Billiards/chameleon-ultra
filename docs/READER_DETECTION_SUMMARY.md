@@ -289,8 +289,39 @@ If a failing tap measures **as strong as** the successful one, the screen says s
 proposing a number. That would mean envelope strength cannot separate these taps on this hardware,
 and the measurements should be reported rather than worked around.
 
-Until calibration is done the app uses a 600 mV default — roughly 3× the LPCOMP reference, and a
-starting point, not a measurement.
+### Measured results (2026-08-24, real locker, real key)
+
+Run on a ChameleonUltra over USB-OTG against a real locker reader, broadcasting **that locker's own
+key**, so the correct tap genuinely opened the door and "strong reading" and "locker opened" were
+confirmed together rather than one standing in for the other:
+
+| Tap | Peak envelope | Strong stretch | Locker |
+|-----|---------------|----------------|--------|
+| Correct position | **3599 mV** | 8781 ms | **opens** |
+| Wrong position | **1784 mV** | 0 ms | stays shut |
+| Wrong side (no A/B buttons) | **677 mV** | 0 ms | stays shut |
+
+Both failing taps produced **zero** strong samples, so `strong_ms_max` stayed at 0 and the app
+refused them — while the correct tap held a strong stretch of nearly nine seconds. The screen
+proposed **2690 mV** (the midpoint). The saturation worry is answered too: a correct tap does sit near
+the 3600 mV full scale, but the failing taps are nowhere near it, so the gap is a real difference in
+coupling rather than an artefact of the clip.
+
+**The wrong-side tap is the whole argument in one line:** it raised **21 separate field detections**
+and pushed **380 frames** at the reader — over a hundred times what a decode needs — and was never
+once read. Frames and duration were never the scarce thing. Under the old rule, the *first* of those
+21 detections would have reported the locker as opened.
+
+**This also corrected two wrong defaults.** The first version shipped 600 mV, reasoned as
+"comfortably above the ~200 mV LPCOMP trip"; the wrong-position tap reached **1784 mV**, so 600 mV
+would have scored a failing tap as strong and left the bug exactly where it was. A second guess of
+2000 mV left only ~200 mV of margin. The default is now **2690 mV**, the measured midpoint itself —
+about 900 mV above the worst failure and 770 mV below the weakest good reading observed (~3460 mV).
+No amount of reasoning produced that number; only the measurement did.
+
+Note what the duration terms did *not* do. Both failing taps held 675 ms, clearing the 400 ms session
+floor comfortably. Amplitude is doing all of the discriminating; the duration terms only refuse the
+single-burst case.
 
 ### The escape hatch (do not remove it)
 
