@@ -213,8 +213,17 @@
 // field-appearance events against the emulated tag. LF has no reader->tag
 // handshake, so this means "a reader energised me", not a decode confirmation,
 // and carries no card identity (unlike the HF SELECT counter 4045/4046).
+// A bare count proved too weak to gate a locker on — any reader whose field
+// reaches the antenna trips it, including one far too weakly coupled to
+// demodulate us. Prefer LF_GET_FIELD_INFO, which reports how strong the
+// coupling actually was. See lf_tag_em.h.
 #define DATA_CMD_LF_GET_FIELD_COUNT             (5014)  // -> [count:u32 BE]
-#define DATA_CMD_LF_CLEAR_FIELD_COUNT           (5015)  // reset the LF field-detection counter
+#define DATA_CMD_LF_CLEAR_FIELD_COUNT           (5015)  // reset counters + envelope stats
+// -> [count:u32][frames:u32][session_ms_max:u32][rssi_last_mv:u16]
+//    [rssi_peak_mv:u16][samples:u16][strong_samples:u16][strong_run_max:u16]
+//    [strong_mv:u16][flags:u8], all big-endian; flags bit0 = emulating now
+#define DATA_CMD_LF_GET_FIELD_INFO              (5016)
+#define DATA_CMD_LF_SET_STRONG_MV               (5017)  // <- [mv:u16 BE]
 
 #define DATA_CMD_EM4X05_SCAN                    (3030)
 #define DATA_CMD_EM4X05_READSNIFF               (3032)

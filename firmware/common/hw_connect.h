@@ -47,6 +47,10 @@ extern uint32_t g_button2;
 extern uint32_t g_lf_mod;
 extern uint32_t g_lf_rssi_pin;
 extern nrf_lpcomp_input_t g_lf_rssi;
+// The same LF envelope pin seen by the SAADC. LPCOMP only answers "is the field
+// above one fixed reference"; the ADC reads how strong it actually is, which is
+// what tells a well-coupled tap apart from one the reader cannot decode.
+extern nrf_saadc_input_t g_lf_rssi_adc;
 extern uint32_t g_bat_sense_pin;
 extern nrf_saadc_input_t g_bat_sense;
 
@@ -71,6 +75,7 @@ extern nrf_saadc_input_t g_bat_sense;
 #define LF_MOD          g_lf_mod
 #define LF_RSSI_PIN     g_lf_rssi_pin
 #define LF_RSSI         g_lf_rssi
+#define LF_RSSI_ADC     g_lf_rssi_adc
 #define BAT_SENSE_PIN   g_bat_sense_pin
 #define BAT_SENSE       g_bat_sense
 
