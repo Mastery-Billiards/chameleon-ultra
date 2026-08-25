@@ -78,9 +78,12 @@ static tag_specific_type_t m_tag_type = TAG_TYPE_UNDEFINED;
 // while a wrong-position tap reached 1784mV and a wrong-side tap 677mV with the
 // door staying shut. A first guess of 600mV — "comfortably above the ~200mV
 // LPCOMP trip" — would have scored that 1784mV failing tap as strong, and 2000mV
-// left only ~200mV above it. So this is the measured midpoint of those readings
-// rather than another estimate: ~900mV clear of the worst failure and ~770mV
-// below the weakest good reading observed (~3460mV).
+// left only ~200mV above it. The measured midpoint (2690mV) went the other way
+// and sat too high: lockers opened while the host kept asking for another tap,
+// because a real tap does not always couple as well as the calibration one did.
+// So this leans toward the failure ceiling instead of splitting the difference —
+// ~500mV clear of the worst failure, with the rest of the range left to genuine
+// taps. A refused tap is visible and recoverable; an unverified open is not.
 //
 // The wrong-side tap raised 21 separate field detections and pushed 380 frames
 // at the reader without ever being decoded, which is the whole argument for
@@ -88,7 +91,7 @@ static tag_specific_type_t m_tag_type = TAG_TYPE_UNDEFINED;
 //
 // Still only one locker's readers, so the host retunes it per deployment over
 // DATA_CMD_LF_SET_STRONG_MV, which is the whole reason it lives in a variable.
-#define LF_STRONG_MV_DEFAULT    2690
+#define LF_STRONG_MV_DEFAULT    2300
 
 // Returned when no reading could be taken at all. Distinct from 0 mV, which is
 // a real measurement meaning "no field": a skipped conversion must not be

@@ -266,11 +266,19 @@ A tap is accepted only when **both** hold:
 - `adc_ok` — the device could measure at all. Without this a run of unmeasured samples would look
   identical to a reader that is never strong enough, i.e. a permanent silent refusal. The app checks
   it once at arm time and refuses loudly there instead.
-- `strong_ms_max >= 300` — an unbroken stretch of strong coupling, which at one sample per ~328ms
-  burst means two consecutive strong readings. A stretch rather than a total, because a device swept
-  past a reader can collect scattered strong samples without ever being presented as a card.
-- `session_ms_max >= 400` — the field held unbroken. Belt and braces: it refuses the wrong-position
-  tap on its own, with no calibration involved.
+- **one strong sample.** The device samples at the *end* of each burst, so a single strong sample
+  already means ten EM4100 frames went into a field measured at or above the threshold. That is the
+  whole claim being made, and a second sample adds nothing to it.
+
+An earlier version demanded `strong_ms_max >= 300` — an unbroken stretch, i.e. two consecutive
+strong samples — plus `session_ms_max >= 400`. It was reasoned as protection against a device swept
+past a reader, and it caused the mirror-image failure in the field: lockers opened on the first burst
+while the app kept asking for a tap that had already worked. Two things conspired. A stretch cannot
+exist until a second sample lands ~330ms later, and a reader that drops its field the moment it
+decodes never provides one — so `strong_ms_max` stayed at 0 over a door standing open.
+
+The discrimination was never coming from the run length. It comes from the threshold, and with
+3599 mV against 1784 mV there is enough daylight that one sample above the line is decisive.
 
 The wrong-face tap clears the duration bar and is refused solely by the envelope threshold, so **that
 number has to be right**.
@@ -303,7 +311,7 @@ confirmed together rather than one standing in for the other:
 
 Both failing taps produced **zero** strong samples, so `strong_ms_max` stayed at 0 and the app
 refused them — while the correct tap held a strong stretch of nearly nine seconds. The screen
-proposed **2690 mV** (the midpoint). The saturation worry is answered too: a correct tap does sit near
+proposed **2690 mV** (then the midpoint). The saturation worry is answered too: a correct tap does sit near
 the 3600 mV full scale, but the failing taps are nowhere near it, so the gap is a real difference in
 coupling rather than an artefact of the clip.
 
@@ -315,9 +323,16 @@ once read. Frames and duration were never the scarce thing. Under the old rule, 
 **This also corrected two wrong defaults.** The first version shipped 600 mV, reasoned as
 "comfortably above the ~200 mV LPCOMP trip"; the wrong-position tap reached **1784 mV**, so 600 mV
 would have scored a failing tap as strong and left the bug exactly where it was. A second guess of
-2000 mV left only ~200 mV of margin. The default is now **2690 mV**, the measured midpoint itself —
-about 900 mV above the worst failure and 770 mV below the weakest good reading observed (~3460 mV).
-No amount of reasoning produced that number; only the measurement did.
+2000 mV left only ~200 mV of margin. The midpoint (2690 mV) came next and went too far the other
+way: in use it refused taps that had already opened the locker, because a real tap does not always
+couple as well as the one measured during calibration — a thicker faceplate, a different device, a
+hurried hand all cost millivolts.
+
+The default is now **2300 mV**, and the calibration screen suggests a threshold 30% of the way from
+the worst failure to the good tap rather than 50%. That keeps ~500 mV of daylight above the failing
+taps, which cluster because they are limited by geometry, and gives the rest of the range to genuine
+taps, which vary. No amount of reasoning produced these numbers; only the measurements did — first
+the separation, then the false refusals.
 
 Note what the duration terms did *not* do. Both failing taps held 675 ms, clearing the 400 ms session
 floor comfortably. Amplitude is doing all of the discriminating; the duration terms only refuse the
