@@ -1018,10 +1018,7 @@ static data_frame_tx_t *cmd_processor_lf_get_field_info(uint16_t cmd, uint16_t s
     // response out of several different moments.
     lf_tag_em_field_get(&info);
 
-    // 31 bytes of tap profile, then the trough statistics appended after it.
-    // Appended rather than interleaved so an older host that stops reading at
-    // byte 31 still parses every field it knows, exactly as before.
-    uint8_t payload[39] = { 0 };
+    uint8_t payload[31] = { 0 };
     uint32_t u32;
     uint16_t u16;
 
@@ -1050,14 +1047,6 @@ static data_frame_tx_t *cmd_processor_lf_get_field_info(uint16_t cmd, uint16_t s
     payload[30] = (info.emulating ? 0x01 : 0x00) |
                   (info.adc_ok ? 0x02 : 0x00) |
                   (info.clipped ? 0x04 : 0x00);
-    u16 = U16HTONS(info.rssi_min_mv);
-    memcpy(&payload[31], &u16, 2);
-    u16 = U16HTONS(info.weak_run_max);
-    memcpy(&payload[33], &u16, 2);
-    u16 = U16HTONS(info.rssi_loaded_peak_mv);
-    memcpy(&payload[35], &u16, 2);
-    u16 = U16HTONS(info.rssi_loaded_min_mv);
-    memcpy(&payload[37], &u16, 2);
 
     return data_frame_make(cmd, STATUS_SUCCESS, sizeof(payload), payload);
 }

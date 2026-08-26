@@ -29,13 +29,6 @@
 NRF_LOG_MODULE_REGISTER();
 
 #define ANT_NO_MOD() nrf_gpio_pin_clear(LF_MOD)
-// Applies the load the same way a modulated bit does, but held deliberately
-// rather than as part of a frame. Only ever used between bursts, to take an
-// envelope reading that is damped far enough to stay inside the converter's
-// range — see the loaded-sample note in pwm_handler. Held for a couple of
-// milliseconds, which is a few Manchester half-bits: unremarkable for the
-// driver, and no frame is in flight to be disturbed.
-#define ANT_MOD() nrf_gpio_pin_set(LF_MOD)
 
 // Whether the USB light effect is allowed to enable
 extern bool g_usb_led_marquee_enable;
@@ -119,19 +112,6 @@ static volatile uint16_t m_lf_strong_run = 0;
 static volatile uint16_t m_lf_strong_run_max = 0;
 static volatile uint16_t m_lf_strong_mv = LF_STRONG_MV_DEFAULT;
 static volatile uint16_t m_lf_missed_samples = 0;
-// Trough statistics. Everything above is a maximum or a count, so a *drop* in
-// the carrier cannot be seen in any of it — and a drop is the only thing that
-// could mark the moment a lock actually fired its bolt. See the block comment on
-// lf_tag_em_field_info_t. LF_RSSI_NO_READING doubles as "no minimum yet": it is
-// above every real reading, so the first genuine sample always replaces it.
-static volatile uint16_t m_lf_rssi_min_mv = LF_RSSI_NO_READING;
-static volatile uint16_t m_lf_weak_run = 0;
-static volatile uint16_t m_lf_weak_run_max = 0;
-// The same pair taken with the modulator held on, where the envelope is damped
-// by our own load and therefore still inside the converter's range at coupling
-// levels that peg the idle reading at full scale.
-static volatile uint16_t m_lf_rssi_loaded_peak_mv = 0;
-static volatile uint16_t m_lf_rssi_loaded_min_mv = LF_RSSI_NO_READING;
 // Set once LF sensing has claimed its ADC channel, so a sample is never
 // attempted against a channel that was never initialised. Reported to the host,
 // which refuses to arm without it: a device that cannot measure would otherwise
@@ -223,35 +203,6 @@ static void lf_rssi_record(uint16_t mv) {
         // A weak sample breaks the run. This is the line that refuses a tap
         // which drifts out of range.
         m_lf_strong_run = 0;
-        if (m_lf_weak_run < UINT16_MAX) {
-            m_lf_weak_run++;
-        }
-        if (m_lf_weak_run > m_lf_weak_run_max) {
-            m_lf_weak_run_max = m_lf_weak_run;
-        }
-    }
-    if (mv >= m_lf_strong_mv) {
-        m_lf_weak_run = 0;
-    }
-
-    // The trough. Tracked only once a field is actually present: with no reader
-    // near us the envelope reads near zero every burst, which would pin the
-    // minimum at 0 forever and hide the very dip this exists to catch.
-    if (m_is_lf_emulating && mv < m_lf_rssi_min_mv) {
-        m_lf_rssi_min_mv = mv;
-    }
-}
-
-/** Fold one loaded-modulator sample into the running profile. */
-static void lf_rssi_record_loaded(uint16_t mv) {
-    if (mv == LF_RSSI_NO_READING) {
-        return;
-    }
-    if (mv > m_lf_rssi_loaded_peak_mv) {
-        m_lf_rssi_loaded_peak_mv = mv;
-    }
-    if (m_is_lf_emulating && mv < m_lf_rssi_loaded_min_mv) {
-        m_lf_rssi_loaded_min_mv = mv;
     }
 }
 
@@ -273,11 +224,6 @@ void lf_tag_em_field_clear(void) {
     m_lf_strong_run_max = 0;
     m_lf_missed_samples = 0;
     m_lf_rssi_clipped = false;
-    m_lf_rssi_min_mv = LF_RSSI_NO_READING;
-    m_lf_weak_run = 0;
-    m_lf_weak_run_max = 0;
-    m_lf_rssi_loaded_peak_mv = 0;
-    m_lf_rssi_loaded_min_mv = LF_RSSI_NO_READING;
     // A session already in flight keeps running, but its clock restarts here so
     // the reported duration only ever covers time the host asked about.
     m_lf_session_start_tk = app_timer_cnt_get();
@@ -300,16 +246,6 @@ void lf_tag_em_field_get(lf_tag_em_field_info_t *out) {
     out->strong_run_max = m_lf_strong_run_max;
     out->strong_mv = m_lf_strong_mv;
     out->missed_samples = m_lf_missed_samples;
-    // Report an untouched minimum as 0 rather than leaking the sentinel: the
-    // host reads these as millivolts, and 0xFFFF would parse as a 65-volt
-    // trough. 0 with samples == 0 already means "nothing measured".
-    out->rssi_min_mv =
-        (m_lf_rssi_min_mv == LF_RSSI_NO_READING) ? 0 : m_lf_rssi_min_mv;
-    out->weak_run_max = m_lf_weak_run_max;
-    out->rssi_loaded_peak_mv = m_lf_rssi_loaded_peak_mv;
-    out->rssi_loaded_min_mv = (m_lf_rssi_loaded_min_mv == LF_RSSI_NO_READING)
-                                  ? 0
-                                  : m_lf_rssi_loaded_min_mv;
     out->emulating = m_is_lf_emulating;
     out->adc_ok = m_lf_rssi_adc_ready;
     out->clipped = m_lf_rssi_clipped;
@@ -491,26 +427,6 @@ static void pwm_handler(nrfx_pwm_evt_type_t event_type) {
     // nothing is missed meanwhile: UP events are ignored while emulating.
     nrfx_lpcomp_disable();
     lf_rssi_record(lf_rssi_sample_mv());
-
-    // Second reading of the same gap, this time with the antenna loaded.
-    //
-    // The idle sample above is the honest measure of "how hard is the reader
-    // driving us", and it is the one the strong/weak threshold is calibrated
-    // against — but at the coupling a correct tap achieves it saturates. 3599mV
-    // is not a measurement, it is the ceiling of the conversion, so any change
-    // at the top of the range is invisible in it.
-    //
-    // Holding the modulator on damps the antenna and drops the envelope back
-    // inside the range, where it can still move. That is what makes a carrier
-    // dip — the only candidate signature for a bolt actually firing — visible at
-    // all. Nothing here touches the id stream: the burst is already over, the
-    // modulator is released again immediately, and the next playback starts from
-    // a clean pin either way.
-    ANT_MOD();
-    bsp_delay_ms(2);  // same peak-detector time constant, settling downward now
-    lf_rssi_record_loaded(lf_rssi_sample_mv());
-    ANT_NO_MOD();
-    bsp_delay_ms(2);  // let it recover before the field check reads the pin
 
     if (is_lf_field_exists()) {
         // Field still present — play another finite burst then check again.

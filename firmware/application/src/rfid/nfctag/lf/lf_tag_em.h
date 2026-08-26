@@ -70,50 +70,6 @@ typedef struct {
     uint16_t strong_run_max;   /**< longest unbroken run of strong samples */
     uint16_t strong_mv;        /**< the strong threshold currently in force */
     uint16_t missed_samples;   /**< conversions skipped because the ADC was busy */
-
-    /* ---- actuation evidence: looking for a dip, not a peak ---------------
-     *
-     * Everything above this line is a maximum or a monotonic count, which is
-     * the right shape for the question "was the reader ever coupled well enough
-     * to read us" and the wrong shape for every other question. In particular a
-     * *drop* in the carrier is invisible to all of it by construction:
-     * rssi_peak_mv only ever rises, strong_samples only ever counts up, and a
-     * strong run that briefly dips and recovers still leaves strong_ms_max at
-     * its old value.
-     *
-     * That matters because the one physical event which distinguishes a reader
-     * that accepted our id from one that decoded it and threw it away is the
-     * bolt: firing it draws 0.3-3A for tens to hundreds of milliseconds out of
-     * the same cells that generate the 125kHz carrier, and drags a ferrous
-     * armature past the reader's coil. Both push the carrier *down*. A refusal
-     * draws almost nothing. So the accept signature, if it exists on a given
-     * lock, is a trough — and nothing here could see one.
-     *
-     * These four fields are the cheapest possible instrument for that question.
-     * They add no command, no buffer and no airtime; they are two extra
-     * comparisons per sample. If the trough never moves on a door that visibly
-     * opens, the whole idea is dead for a tenth of the cost of finding out any
-     * other way.
-     */
-    uint16_t rssi_min_mv;      /**< weakest sample taken while a field was present */
-    uint16_t weak_run_max;     /**< longest unbroken run of below-threshold samples */
-
-    /* The idle sample saturates exactly where the answer would live. A correct
-     * tap reads 3599mV, and 3599 is the largest number the conversion can
-     * produce: raw codes 16380-16383 all map to it at 14-bit resolution and 1/6
-     * gain. There is no headroom above it in which a sag could show, and the
-     * clip flag sits one code away without ever tripping.
-     *
-     * Sampling a second time with the modulator *held on* fixes that for free.
-     * Load modulation damps the antenna, so the loaded envelope sits well below
-     * the unloaded one — back inside the converter's range — while still moving
-     * monotonically with it. It costs no airtime, because it happens in the same
-     * inter-burst gap the idle sample already uses, and it is the only reading
-     * of the two that can show a change at the top of the coupling range.
-     */
-    uint16_t rssi_loaded_peak_mv; /**< strongest loaded sample (unsaturated) */
-    uint16_t rssi_loaded_min_mv;  /**< weakest loaded sample while a field was present */
-
     bool emulating;            /**< a field session is open right now */
     bool adc_ok;               /**< the envelope channel was claimed successfully */
     bool clipped;              /**< a sample hit ADC full scale (3.6V) */
