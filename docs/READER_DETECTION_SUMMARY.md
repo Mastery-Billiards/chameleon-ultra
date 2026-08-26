@@ -305,15 +305,34 @@ confirmed together rather than one standing in for the other:
 
 | Tap | Peak envelope | Strong stretch | Locker |
 |-----|---------------|----------------|--------|
-| Correct position | **3599 mV** | 8781 ms | **opens** |
+| Correct position | **3599 mV** | 8781 ms *(read the cautions)* | **opens** |
 | Wrong position | **1784 mV** | 0 ms | stays shut |
 | Wrong side (no A/B buttons) | **677 mV** | 0 ms | stays shut |
 
 Both failing taps produced **zero** strong samples, so `strong_ms_max` stayed at 0 and the app
 refused them — while the correct tap held a strong stretch of nearly nine seconds. The screen
-proposed **2690 mV** (then the midpoint). The saturation worry is answered too: a correct tap does sit near
-the 3600 mV full scale, but the failing taps are nowhere near it, so the gap is a real difference in
-coupling rather than an artefact of the clip.
+proposed **2690 mV** (then the midpoint).
+
+> **Two cautions about the top row.** Both were found later, and both matter, because this table
+> gets cited for claims it cannot support.
+>
+> **The strong stretch was measured against a 600 mV bar, not today's 2300 mV.** This session ran
+> the firmware default of the time; `ad55a35` raised it to 2690 and `3453646` settled on 2300, both
+> *after* these numbers were taken — the screen "proposed 2690", i.e. it was computing a suggestion,
+> not enforcing one. So "8781 ms unbroken" means only that the envelope never fell below **600 mV**
+> across ~27 sample instants. It is **not** evidence that a correct tap stays above 2300 mV for nine
+> seconds, and it does not rule out a carrier sag of up to 83%. Used as an argument against a
+> bolt-actuation dip, it proves much less than it looks like it proves. What it does constrain is a
+> *total* dropout: the run also ends on field loss, so no loss was seen at ~27 consecutive burst
+> boundaries. Both checks sample once per ~330 ms, so anything shorter can fall between them.
+>
+> **3599 mV is the ceiling of the conversion, not a measurement.** At 14-bit resolution and 1/6 gain
+> `raw * 3600 / 16384` cannot exceed 3599, and raw codes 16380-16383 all map to it. A correct tap
+> sits on the rail with the clip flag one code away from tripping. The failing rows are mid-range and
+> trustworthy; the good row is saturated, so **no amplitude change at good coupling can be seen in
+> it**. That is why the loaded sample in §12 exists, and why the "saturation worry is answered"
+> sentence this paragraph replaced was answering the wrong question: the failing taps are indeed
+> nowhere near the rail, so the strong/weak *gap* is real — but the top of the range is still blind.
 
 **The wrong-side tap is the whole argument in one line:** it raised **21 separate field detections**
 and pushed **380 frames** at the reader — over a hundred times what a decode needs — and was never
@@ -361,3 +380,88 @@ The two mistakes are not symmetric. A false success leaves a customer at a locke
 backend recording a completed unlock. A false failure means staff see an error next to a door that
 did open, and retry. The thresholds therefore err strict, and the tap screen coaches
 ("Tín hiệu yếu — chạm mặt có nút A/B…") instead of silently waiting.
+
+---
+
+## 12. Actuation evidence — separating an accepted read from a refused one
+
+§11 settled which taps a reader *could read*. It cannot settle which taps a reader *accepted*, and
+those are different questions with a bug living in the gap between them.
+
+### The failure
+
+Staff hold tủ 2's key and tap tủ 3's reader. Tủ 3 energises, reads the id at full strength, refuses
+it because it is not tủ 3's key, and never moves its bolt. Every field in the tap profile reads
+exactly like a real open, so the app reported tủ 2 open. Downstream that is not recoverable:
+`/success` flips the locker's asset status, writes an unlock record and sends **the customer** a
+message about a locker that never opened, and `COMPLETED` is terminal — no endpoint can take it back.
+
+**No threshold can fix this, and no amount of calibration can either.** Envelope amplitude is
+reciprocal coupling: it is decided by how the device is held against the faceplate, and it is
+identical whether the id was on that reader's list or not. Acceptance is a decision taken inside the
+lock, on a protocol with no back-channel — EM410X is a one-way broadcast. Every earlier fix in this
+document tuned the *read* question; this one is a different axis entirely.
+
+### What could possibly differ
+
+Only a side effect. An accepted read fires a bolt: a motor or solenoid draws roughly 0.3-3 A for
+tens to hundreds of milliseconds out of the same cells that generate the 125 kHz carrier, and drags a
+ferrous armature past the reader's coil. Both push the carrier **down**. A refusal drives a piezo at
+a few tens of milliamps and moves nothing.
+
+So the evidence is a **dip**, and two things had to change before one could be seen at all.
+
+**Everything the firmware reported was a maximum or a count.** `rssi_peak_mv` only rises,
+`strong_samples` only counts up, and a strong run that dips and recovers leaves `strong_ms_max`
+untouched. A dip was invisible **by construction** — none of the measurements taken so far could have
+detected one even if it happened. `rssi_min_mv` and `weak_run_max` are the first fields that can move
+downward.
+
+**The idle sample saturates exactly where the answer would live.** A correct tap reads 3599 mV, which
+is the ceiling of the conversion (see the caution in §11), so there is no headroom in which a sag
+could register. `pwm_handler` therefore takes a **second sample with the modulator held on**:
+`ANT_MOD()`, 2 ms to settle, convert, `ANT_NO_MOD()`, 2 ms to recover, then the usual field check.
+Load modulation damps the antenna, so the loaded envelope sits well below the unloaded one — back
+inside the converter's range — while still tracking it monotonically. It costs no airtime: the burst
+is already over, and it happens inside the inter-burst gap the idle sample already used. The gap
+grows from ~2 ms to ~6 ms against a ~328 ms burst.
+
+The host compares `rssi_loaded_min_mv` against `rssi_loaded_peak_mv` and treats a fall past a
+configured fraction as evidence a bolt moved. `DATA_CMD_LF_GET_FIELD_INFO` grew from **31 to 39
+bytes**, appended rather than interleaved, so an older host that stops reading at byte 31 parses
+every field it knows exactly as before.
+
+### Status: instrument first, and say so plainly
+
+**The dip has never been measured on these readers.** It cannot have been: every calibration run so
+far broadcast the locker's own key, so every strong read on record is an *accepted* one. A
+refused-but-strong tap — the exact case the bug lives in — has never been captured.
+
+The default bar (10% of the loaded peak) is a starting point taken from the physics, not from
+hardware, and the app's calibration screen exists to replace it with a measured number. It gained a
+fourth scenario, **"Tủ khác — đọc được nhưng KHÔNG mở"**, which is deliberately excluded from the
+millivolt threshold maths: folding it into the failure ceiling would push the suggested threshold
+above the good tap and report "no separation" every time, which is true of amplitude and useless as
+advice. Compared against the correct tap it gives the actuation bar instead.
+
+Run it with the locker's **real key**, so the correct tap genuinely opens the door, and take both
+taps in one visit. Three outcomes:
+
+- **The accepted tap dips and the refused one does not** — the bar is measurable, save it, and the
+  wrong-locker case is refused automatically from then on.
+- **Neither dips** — this lock's RF section is regulated separately from its motor, or it is
+  mains-fed. No carrier measurement can separate the two taps on this hardware. The screen says so
+  rather than proposing a number.
+- **Both dip equally** — same conclusion, and the screen says that too.
+
+The second and third outcomes are real possibilities, not edge cases. If either turns up, the honest
+answer is that the RF channel cannot settle which door opened, and identity has to come from
+somewhere outside it — a per-locker marker read before the key goes on the air is the option that
+ends the class rather than inferring around it.
+
+### Direction of failure, restated
+
+Unchanged in principle and worth repeating, because this feature moves the balance: a tap that opened
+a door and was recorded FAILED costs a retry, and staff see it immediately. A tap that opened nothing
+and was recorded COMPLETED corrupts the locker's state, messages the wrong customer, and nobody ever
+re-reads it. When the evidence is absent the flow waits and then fails; it does not guess.
